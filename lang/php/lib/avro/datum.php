@@ -982,3 +982,214 @@ class AvroIOBinaryDecoder
   }
 }
 
+// added DTAI
+/**
+ * Note : This code comes from AvroIODatumWriter by copy/paste then modifications. A better
+ * approach would have been to extract a base class from AvroIODatumWriter to derive
+ * this JSON producer from. This is left to the reader as an exercise.
+ * 
+ * Produces Avro-JSON from an object.
+ * Avro-JSON is a special flavour of JSON, where unions are like so :
+ * "field" : {"typeName": <<value>> }
+ * instead of the naive form :
+ * "field" : <<value>>
+ *
+ * This JSON flavour is the only one that Kafka REST proxy currently supports.
+ * 
+ * Ensures that each datum written is consistent with the writer's schema.
+ *
+ * @package Avro
+ */
+class AvroJSONWriter
+{
+  /**
+   * Schema used by this instance to write Avro data.
+   * @var AvroSchema
+   */
+  private $writers_schema;
+
+  // JSON text will be appended in here
+  private $buffer;
+
+  /**
+   * @param AvroSchema $writers_schema
+   */
+  function __construct($writers_schema=null)
+  {
+    $this->buffer = '';
+    $this->writers_schema = $writers_schema;
+  }
+
+  function string(){ return $this->buffer; }
+
+  /**
+   * @param AvroSchema $writers_schema
+   * @param $datum
+   * @returns nothing
+   *
+   * @throws AvroIOTypeException if $datum is invalid for $writers_schema
+   */
+  function write_data($writers_schema, $datum)
+  {
+    if (!AvroSchema::is_valid_datum($writers_schema, $datum))
+      throw new AvroIOTypeException($writers_schema, $datum);
+
+    switch ($writers_schema->type())
+    {
+      case AvroSchema::NULL_TYPE:
+        $this->buffer .= "null";
+        break;
+      case AvroSchema::BOOLEAN_TYPE:
+        $this->buffer .= $datum ? "true" : "false";
+        break;
+      case AvroSchema::INT_TYPE:
+        $this->buffer .= $datum;
+        break;
+      case AvroSchema::LONG_TYPE:
+        $this->buffer .= $datum;
+        break;
+      case AvroSchema::FLOAT_TYPE:
+        $this->buffer .= $datum;
+        break;
+      case AvroSchema::DOUBLE_TYPE:
+        $this->buffer .= $datum;
+        break;
+      case AvroSchema::STRING_TYPE:
+        $this->buffer .= json_encode($datum);
+        break;
+      case AvroSchema::BYTES_TYPE:
+        $this->buffer .= '"' . base64_encode($datum) . '"'; // TODO not sure about this one
+        break;
+      case AvroSchema::ARRAY_SCHEMA:
+        $this->write_array($writers_schema, $datum);
+        break;
+      case AvroSchema::MAP_SCHEMA:
+        $this->write_map($writers_schema, $datum);
+        break;
+      case AvroSchema::FIXED_SCHEMA:
+        $this->write_fixed($writers_schema, $datum);
+        break;
+      case AvroSchema::ENUM_SCHEMA:
+        $this->write_enum($writers_schema, $datum);
+        break;
+      case AvroSchema::RECORD_SCHEMA:
+      case AvroSchema::ERROR_SCHEMA:
+      case AvroSchema::REQUEST_SCHEMA:
+        $this->write_record($writers_schema, $datum);
+        break;
+      case AvroSchema::UNION_SCHEMA:
+        $this->write_union($writers_schema, $datum);
+        break;
+      default:
+        throw new AvroException(sprintf('Uknown type: %s',
+                                        $writers_schema->type));
+    }
+  }
+
+  /**
+   * @param $datum
+   */
+  function write($datum)
+  {
+    $this->write_data($this->writers_schema, $datum);
+  }
+
+  /**#@+
+   * @param AvroSchema $writers_schema
+   * @param null|boolean|int|float|string|array $datum item to be written
+   */
+  private function write_array($writers_schema, $datum)
+  {
+    $this->buffer .= '[';
+    $datum_count = count($datum);
+    if (0 < $datum_count)
+    {
+      $items = $writers_schema->items();
+      foreach ($datum as $i => $item){
+        if ($i > 0) $this->buffer .= ',';
+        $this->write_data($items, $item);
+      }
+    }
+    $this->buffer .= ']';
+  }
+
+  private function write_map($writers_schema, $datum)
+  {
+    $this->buffer .= '{';
+    $datum_count = count($datum);
+    if ($datum_count > 0)
+    {
+      $i = 0;
+      foreach ($datum as $k => $v)
+      {
+        if ($i++ > 0) $this->buffer .= ',';
+        $this->buffer .= json_encode($k);
+	$this->buffer .= ':';
+        $this->write_data($writers_schema->values(), $v);
+      }
+    }
+    $this->buffer .= '}';
+  }
+
+  private function write_union($writers_schema, $datum)
+  {
+    $datum_schema_index = -1;
+    $datum_schema = null;
+    foreach ($writers_schema->schemas() as $index => $schema)
+      if (AvroSchema::is_valid_datum($schema, $datum))
+      {
+        $datum_schema_index = $index;
+        $datum_schema = $schema;
+        break;
+      }
+
+    if (is_null($datum_schema))
+      throw new AvroIOTypeException($writers_schema, $datum);
+
+    if( is_null($datum) ){
+      $this->buffer .= "null";
+    }else{
+      $this->buffer .= '{';
+      switch ($datum_schema->type){
+        case "record":
+        case "enum":
+          $this->buffer .= '"' . $datum_schema->fullname() . '"';
+          break;
+        default:
+          $this->buffer .= '"' . $datum_schema->type . '"';
+
+      }
+      $this->buffer .= ':';
+      $this->write_data($datum_schema, $datum);
+      $this->buffer .= '}';
+    }
+  }
+
+  private function write_enum($writers_schema, $datum)
+  {
+    $this->buffer .= json_encode($datum);
+  }
+
+  private function write_fixed($writers_schema, $datum)
+  {
+    /**
+     * NOTE Unused $writers_schema parameter included for consistency
+     * with other write_* methods.
+     */
+  }
+
+  private function write_record($writers_schema, $datum)
+  {
+    $this->buffer .= '{';
+    $i = 0;
+    foreach ($writers_schema->fields() as $field){
+      if ($i++ > 0) $this->buffer .= ',';
+      $this->buffer .= '"' . $field->name() . '":';
+      $this->write_data($field->type(), $datum[$field->name()]);
+    }
+    $this->buffer .= '}';
+  }
+
+  /**#@-*/
+}
+
