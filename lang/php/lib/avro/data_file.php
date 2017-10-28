@@ -276,6 +276,10 @@ class AvroDataIOReader
     $this->sync_marker = $this->read(AvroDataIO::SYNC_SIZE);
   }
 
+  public function json_schema(){
+    return $this->metadata[AvroDataIO::METADATA_SCHEMA_ATTR];
+  }
+
   /**
    * @internal Would be nice to implement data() as an iterator, I think
    * @returns array of data from object container.

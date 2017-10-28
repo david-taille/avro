@@ -1022,6 +1022,8 @@ class AvroJSONWriter
 
   function string(){ return $this->buffer; }
 
+  function reset(){ $this->buffer = ''; }
+
   /**
    * @param AvroSchema $writers_schema
    * @param $datum
@@ -1058,7 +1060,11 @@ class AvroJSONWriter
         $this->buffer .= json_encode($datum);
         break;
       case AvroSchema::BYTES_TYPE:
-        $this->buffer .= '"' . base64_encode($datum) . '"'; // TODO not sure about this one
+        // TODO avro-tools do not produce the same JSON for binary...
+        // Not clear how to handle raw bytes in PHP. Avoid if possible.
+        $this->buffer .= '"';
+        $this->buffer .= $datum;
+        $this->buffer .= '"';
         break;
       case AvroSchema::ARRAY_SCHEMA:
         $this->write_array($writers_schema, $datum);

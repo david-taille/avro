@@ -1,0 +1,22 @@
+{"name":"member",
+ "type":"record",
+ "fields":[{"name":"member_id", "type":"int"},
+           {"name":"age", "type":["null","int"]},
+           {"name":"member_name", "type":"string"},
+           {"name":"wages", "type":"float"},
+           {"name":"children", "type":{"type":"array", "items":"string"}},
+           {"name":"sex", "type":{"type":"enum", "symbols":["Male", "Female"], "namespace":"x.y", "name":"Sex"}},
+		{"name":"clone",
+		 "type":["null",{
+                        "name":"Clone",
+			"type":"record",
+		 	"fields":[{"name":"member_id", "type":"int"},
+			   	{"name":"age", "type":["null","int"]},
+				   {"name":"member_name", "type":"string"},
+				   {"name":"wages", "type":"float"},
+				   {"name":"children", "type":{"type":"array", "items":"string"}},
+				   {"name":"sex", "type":"x.y.Sex"}
+				]
+		}]}
+]}
+
